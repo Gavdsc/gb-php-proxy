@@ -2,7 +2,7 @@
     "name": "gavsblog/gb-php-proxy",
     "description": "A simple PHP proxy by Gav",
     "minimum-stability": "stable",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Gav"
