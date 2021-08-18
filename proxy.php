@@ -1,6 +1,6 @@
 <?php
 
-namespace GavsBlog\Proxy;
+namespace GavsBlog;
 
 /**
  * Class Proxy
