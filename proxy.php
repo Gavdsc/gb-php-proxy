@@ -15,7 +15,7 @@ class Proxy {
     private $ch;
     private $url;
     private $cookie;
-    private $response;
+    private string $response;
 
     function __construct($url, $echo = false, $cookie = '') {
         // Setup curl
@@ -49,7 +49,7 @@ class Proxy {
 
         if ($echo) {
             // Maybe you just need the response here? (get/set)
-            $this->response();
+            echo $this->response;
         }
     }
 
@@ -107,8 +107,8 @@ class Proxy {
         return file_exists($path) || mkdir($path, 0777, true);
     }
 
-    public function response() {
-        echo $this->response;
+    public function response(): string {
+        return $this->response;
     }
 
     private function test(bool $mandatory = false) {
