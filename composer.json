@@ -1,11 +1,12 @@
 {
     "name": "gavsblog/gb-php-proxy",
+    "type": "library",
     "description": "A simple PHP proxy by Gav",
     "license": "MIT",
     "authors": [
         {
-            "name": "Gav"
+            "name": "Gav",
+            "homepage": "https://www.gavsblog.com"
         }
-    ],
-    "require": {}
+    ]
 }
