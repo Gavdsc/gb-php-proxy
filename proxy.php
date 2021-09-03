@@ -13,7 +13,7 @@ namespace GavsBlog;
  * @package PathController
  */
 class Proxy {
-    private \CurlHandle $ch;
+    private $ch; // @todo Check type is \CurlHandle
     private string $url;
     private string $cookie;
     private string $method;
@@ -185,7 +185,7 @@ class Proxy {
      * Function: Build options request, mostly pre-flight stuff
      */
     private function buildOptions() {
-        // Todo: Check and return CORS preflights
+        // @todo: Check and return CORS preflights
         curl_setopt($this->ch, CURLOPT_OPTIONS, true);
     }
 
@@ -193,7 +193,7 @@ class Proxy {
      * Function: Override current request headers (passed on construction)
      */
     private function headerOverride() {
-        // Todo: header overrides
+        // @todo: header overrides
     }
 
     /**
