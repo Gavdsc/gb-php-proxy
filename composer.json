@@ -8,8 +8,5 @@
             "name": "Gav",
             "homepage": "https://www.gavsblog.com"
         }
-    ],
-    "require": {
-        "ext-curl": "*"
-    }
+    ]
 }
