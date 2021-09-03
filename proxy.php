@@ -13,9 +13,11 @@ namespace GavsBlog;
  */
 class Proxy {
     private $ch;
-    private $url;
+    private string $url;
     private $cookie;
     private string $response;
+    private array $responseHeaders;
+    private array $requestHeaders;
 
     function __construct($url, $echo = false, $cookie = '') {
         // Setup curl
@@ -24,17 +26,52 @@ class Proxy {
         // Set url assuming return transfer
         $this->setUrl($url);
 
+        // Setup cookie pot
         $this->cookie = $cookie;
 
-        $this->run($echo);
+        // Run the request
+        $this->run();
+
+        // Allow simple echo of response
+        if ($echo) {
+            // Set response headers (match to return)
+            header('Content-Type: ' . $this->responseHeaders['content-type']);
+
+            echo $this->response;
+        }
     }
 
-    // The method gets triggered as soon as there are no other references to a particular object. This can happen either when PHP decides to explicitly free the object, or when we force it using the unset()
+    /**
+     * Function: Cleanup curl when no longer needed, feel free to unset()
+     */
     function __destruct() {
         curl_close($this->ch);
     }
 
-    public function run($echo = false) {
+    /**
+     * Function: Return array of headers (request and response)
+     * @return Array
+     */
+    public function getHeaders() : array {
+        return array(
+            "request" => $this->requestHeaders,
+            "response" => $this->responseHeaders
+        );
+    }
+
+    /**
+     * Function: Return raw response string
+     * @return string
+     */
+    public function getResponse() : string {
+        return $this->response;
+    }
+
+    /**
+     *
+     */
+    public function run() {
+
         // Process method
         $this->processMethod();
 
@@ -44,13 +81,50 @@ class Proxy {
             $this->setCookies();
         }
 
+        // Catch response headers
+        $headers = [];
+
+        curl_setopt($this->ch, CURLOPT_RETURNTRANSFER, 1);
+
+        curl_setopt($this->ch, CURLOPT_HEADERFUNCTION,
+            function($curl, $header) use (&$headers) {
+
+                $length = strlen($header);
+                $header = explode(':', $header, 2);
+
+                if (count($header) < 2)
+                    return $len;
+
+                $headers[strtolower(trim($header[0]))][] = trim($header[1]);
+
+                return $length;
+            }
+        );
+
+        curl_setopt($this->ch, CURLINFO_HEADER_OUT, true);
+
+        curl_setopt($this->ch, CURLOPT_REFERER, 'http://oculus:80');
+
+
         // Curl request
         $this->response = curl_exec($this->ch);
 
-        if ($echo) {
-            // Maybe you just need the response here? (get/set)
-            echo $this->response;
-        }
+        // Save request and response headers
+        $info = curl_getinfo($this->ch);
+
+        $this->responseHeaders = $headers;
+        $this->requestHeaders = $info['request_header'];
+
+        //    var_dump($headers);
+
+        //   var_dump($info['request_header']);
+
+
+        // dump the headers
+        /*   $header_size = curl_getinfo($this->ch, CURLINFO_HEADER_SIZE);
+           $header = substr($this->response, 0, $header_size);
+
+           var_dump($header); */
     }
 
     private function setUrl($url, $transfer = true) {
@@ -65,22 +139,51 @@ class Proxy {
     }
 
     private function processMethod() {
-        // @todo can be expanded for other methods
-        switch ($_SERVER['REQUEST_METHOD']) {
-            case "POST":
-                $this->processPost();
+        // @todo: Expand for other methods
+        switch (strtolower($_SERVER['REQUEST_METHOD'])) {
+            case "post":
+                $this->buildPost();
                 break;
+            case "options":
+                $this->buildOptions();
+                break;
+            case "get":
             default:
                 break;
         }
     }
 
-    private function processPost() {
+    private function buildPost() {
         // Get post data from input buffer
         $postData = file_get_contents('php://input');
 
+        // Set json headers (for bi test) todo: intergrate properly
+        curl_setopt($this->ch, CURLOPT_HTTPHEADER,
+            array(
+                'Content-Type: application/json',
+                'Origin: http://oculus:80',
+                'Access-Control-Request-Headers: content-type',
+                'Access-Control-Request-Method: POST'
+            )
+        );
+
         curl_setopt($this->ch, CURLOPT_POST, true);
         curl_setopt($this->ch, CURLOPT_POSTFIELDS, $postData);
+    }
+
+    private function buildOptions() {
+        // Check and return CORS preflights
+        curl_setopt($this->ch, CURLOPT_OPTIONS, true);
+
+        // Preflight CORS
+        curl_setopt($this->ch, CURLOPT_HTTPHEADER,
+            array(
+                'Content-Type: application/json',
+                'Origin: http://oculus:80',
+                'Access-Control-Request-Headers: content-type',
+                'Access-Control-Request-Method: POST'
+            )
+        );
     }
 
     private function setCookies() {
@@ -105,10 +208,6 @@ class Proxy {
 
     private function makeDirPath($path) {
         return file_exists($path) || mkdir($path, 0777, true);
-    }
-
-    public function response(): string {
-        return $this->response;
     }
 
     private function test(bool $mandatory = false) {
