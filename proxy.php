@@ -169,10 +169,12 @@ class Proxy {
         // Get post data from input buffer
         $postData = file_get_contents('php://input');
 
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'];
+
         // Set request content type for post (taken from incoming request / override in headerOverride if necessary)
-        if (isset($_SERVER['CONTENT_TYPE']) || isset($_SERVER['HTTP_CONTENT_TYPE'])) {
+        if ($contentType) {
             curl_setopt($this->ch, CURLOPT_HTTPHEADER, array(
-                    'Content-Type: ' . $_SERVER['HTTP_CONTENT_TYPE']
+                    'Content-Type: ' . $contentType
                 )
             );
         }
