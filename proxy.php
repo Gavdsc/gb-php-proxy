@@ -20,6 +20,8 @@ class Proxy {
     private array $responseHeaders;
     private string $requestHeaders;
     private string $response;
+    private string $code = '500';
+    private string $body;
 
     /**
      * Proxy constructor
@@ -29,7 +31,7 @@ class Proxy {
      * @param null $methodOverride
      * @param null $headerOverride
      */
-    function __construct($url, $echo = false, $cookie = '', $methodOverride = null, $headerOverride = null) {
+    function __construct($url, $echo = false, $cookie = '', $methodOverride = null, $headerOverride = null, $bodyOverride = null) {
         // Setup curl
         $this->ch = curl_init();
 
@@ -38,6 +40,9 @@ class Proxy {
 
         // Set method (either use the request method or override)
         $this->method = $methodOverride ? strtolower($methodOverride) : strtolower($_SERVER['REQUEST_METHOD']);
+
+        // Set body (override body or get from input buffer)
+        $this->body = $bodyOverride ?? file_get_contents('php://input') ?? '';
 
         // Setup cookie pot
         $this->cookie = $cookie;
@@ -82,6 +87,10 @@ class Proxy {
         return $this->response;
     }
 
+    public function getCode() : string {
+        return $this->code;
+    }
+
     /**
      * Function: Setup and run curl
      */
@@ -120,11 +129,18 @@ class Proxy {
 
         // Save request and response headers
         $info = curl_getinfo($this->ch);
-        $this->responseHeaders = $headers;
 
-        // Todo: check against header size / for 404 before setting
-        // Todo: convert string to array
-        $this->requestHeaders = $info['request_header'];
+        // Check we have info before setting response headers
+        // Todo: clean this up a bit
+        if (!empty($info) && $info["http_code"] !== 0) {
+            $this->code = $info['http_code'];
+
+            $this->responseHeaders = $headers;
+
+            // Todo: check against header size / for 404 before setting
+            // Todo: convert string to array
+            $this->requestHeaders = $info['request_header'];
+        }
     }
 
     /**
@@ -147,6 +163,7 @@ class Proxy {
      * Function: Switch statement for processing delivery methods
      */
     private function processMethod() {
+
         // @todo: Expand for other methods
         switch ($this->method) {
             case "post":
@@ -167,7 +184,7 @@ class Proxy {
      */
     private function buildPost() {
         // Get post data from input buffer
-        $postData = file_get_contents('php://input');
+        //    $postData = file_get_contents('php://input');
 
         $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'];
 
@@ -180,7 +197,7 @@ class Proxy {
         }
 
         curl_setopt($this->ch, CURLOPT_POST, true);
-        curl_setopt($this->ch, CURLOPT_POSTFIELDS, $postData);
+        curl_setopt($this->ch, CURLOPT_POSTFIELDS, $this->body);
     }
 
     /**
