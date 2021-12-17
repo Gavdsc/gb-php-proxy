@@ -4,12 +4,12 @@ namespace GavsBlog;
 
 /**
  * Class Proxy
- * Note: Proxy is only intended to be run once per request / @todo expand for re-use using curl_reset().
- * @todo Write a curl cookie cleanup script
- * @todo Other request methods
- * @todo Redirect/route list
- * @todo Setupd referrers (curl_setopt($this->ch, CURLOPT_REFERER, $address);
- * @tood Header overrides
+ * Note: Proxy is only intended to be run once per request
+ * Todo: expand for re-use using curl_reset().
+ * Todo: Write a curl cookie cleanup script
+ * Todo: Other request methods
+ * Todo: Setup referrers (curl_setopt($this->ch, CURLOPT_REFERER, $address);
+ * Todo: Header overrides
  * @package PathController
  */
 class Proxy {
@@ -23,17 +23,24 @@ class Proxy {
     private string $code = '500';
     private string $body;
 
+    private array $rewrites;
+
     /**
      * Proxy constructor
-     * @param $url
+     * @param string $url
      * @param false $echo
      * @param string $cookie
-     * @param null $methodOverride
-     * @param null $headerOverride
+     * @param string|null $methodOverride
+     * @param string|null $headerOverride
+     * @param string|null $bodyOverride
+     * @param array $rewrites
      */
-    function __construct($url, $echo = false, $cookie = '', $methodOverride = null, $headerOverride = null, $bodyOverride = null) {
+    function __construct(string $url, bool $echo = false, string $cookie = '', string $methodOverride = null, string $headerOverride = null, string $bodyOverride = null, array $rewrites = []) {
         // Setup curl
         $this->ch = curl_init();
+
+        // Set the rewrites
+        $this->rewrites = $rewrites;
 
         // Set url assuming return transfer
         $this->setUrl($url);
@@ -69,9 +76,9 @@ class Proxy {
 
     /**
      * Function: Return array of headers (request and response)
-     * @return Array
+     * @return array
      */
-    public function getHeaders() : array {
+    public function getHeaders(): array {
         return array(
             "method" => $this->method,
             "request" => $this->requestHeaders,
@@ -83,11 +90,11 @@ class Proxy {
      * Function: Return raw response string
      * @return string
      */
-    public function getResponse() : string {
+    public function getResponse(): string {
         return $this->response;
     }
 
-    public function getCode() : string {
+    public function getCode(): string {
         return $this->code;
     }
 
@@ -145,18 +152,79 @@ class Proxy {
 
     /**
      * Function: Set request url with/without headers
-     * @param $url
+     * @param string $url
      * @param bool $transfer
      */
-    private function setUrl($url, $transfer = true) {
+    private function setUrl(string $url, bool $transfer = true) {
+
         // Set the url
-        $this->url = $url;
+        $this->url = $this->routing($url);
 
         curl_setopt($this->ch, CURLOPT_URL, $this->url);
 
         if ($transfer) {
             curl_setopt($this->ch, CURLOPT_RETURNTRANSFER, true);
         }
+    }
+
+    /**
+     * Function: Basic router function for rewrites in * and $ - prefer htaccess for this, but in a pinch
+     * @param $url
+     * @return string
+     */
+    private function routing($url): string {
+
+        // Check the url against rewrites
+        foreach($this->rewrites as $key => $value) {
+
+            // Check direct match
+            if ($key == $url) {
+                $url = $value;
+
+                // Break loop on first match
+                break;
+            }
+
+            $allCheck = explode('/', $key);
+            $count = count($allCheck);
+
+            // Check for all match
+            // Todo: maybe expand for regex/preg_replace instead
+            // Todo: replace with str_starts for PHP 8 at some stage
+            if ($count > 0) {
+
+                if ($allCheck[$count - 1] == '*') {
+
+                    // Todo: Maybe catch query strings to pass
+
+                    // Remove *
+                    $replace = str_replace('/*', '', $key);
+
+                    if (substr($url, 0, strlen($replace)) === $replace) {
+                        $url = $value;
+
+                        // Break loop on first match
+                        break;
+                    }
+                }
+
+                if ($allCheck[$count - 1] == '$') {
+                    // Remove $
+                    $replace = str_replace('/$', '', $key);
+
+                    if (substr($url, 0, strlen($replace)) === $replace) {
+                        // Replace the start of the url
+                        $url = str_replace($replace, $value, $url);
+
+                        // Break loop on first match
+                        break;
+                    }
+                }
+
+            }
+        }
+
+        return $url;
     }
 
     /**
@@ -184,9 +252,9 @@ class Proxy {
      */
     private function buildPost() {
         // Get post data from input buffer
-        //    $postData = file_get_contents('php://input');
+        // $postData = file_get_contents('php://input');
 
-        $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'];
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? "application/octet-stream";
 
         // Set request content type for post (taken from incoming request / override in headerOverride if necessary)
         if ($contentType) {
@@ -212,7 +280,7 @@ class Proxy {
      * Function: Override current request headers (passed on construction)
      */
     private function headerOverride() {
-        // @todo: header overrides
+        // todo: header overrides
     }
 
     /**
@@ -230,7 +298,7 @@ class Proxy {
      * Function: Save sessions
      * @return false|string
      */
-    private function handleSession() {
+    private function handleSession(): bool|string {
         // Set session save path
         session_save_path($this->cookie);
 
@@ -244,10 +312,10 @@ class Proxy {
 
     /**
      * Function: Make file paths if necessary
-     * @param $path
+     * @param string $path
      * @return bool
      */
-    private function makeDirPath($path) {
+    private function makeDirPath(string $path): bool {
         return file_exists($path) || mkdir($path, 0777, true);
     }
 }
