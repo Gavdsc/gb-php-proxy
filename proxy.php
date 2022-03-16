@@ -298,7 +298,7 @@ class Proxy {
      * Function: Save sessions
      * @return false|string
      */
-    private function handleSession(): bool|string {
+    private function handleSession(): {
         // Set session save path
         session_save_path($this->cookie);
 
