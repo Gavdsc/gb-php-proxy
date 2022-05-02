@@ -6,7 +6,6 @@ namespace GavsBlog;
  * Class Proxy
  * Note: Proxy is only intended to be run once per request
  * Todo: expand for re-use using curl_reset().
- * Todo: Write a curl cookie cleanup script
  * Todo: Other request methods
  * Todo: Setup referrers (curl_setopt($this->ch, CURLOPT_REFERER, $address);
  * Todo: Header overrides
@@ -14,56 +13,105 @@ namespace GavsBlog;
  */
 class Proxy {
     private $ch; // @todo Check type is \CurlHandle
-    private string $url;
-    private string $cookie;
-    private string $method;
+    private string $cookie = '';
+    private string $method = 'GET';
     private array $responseHeaders;
     private string $requestHeaders;
     private string $response;
     private string $code = '500';
     private string $body;
+    private bool $call = false;
 
-    private array $rewrites;
+    // Array to hold routes
+    private array $routes = [];
 
     /**
      * Proxy constructor
-     * @param string $url
-     * @param false $echo
-     * @param string $cookie
-     * @param string|null $methodOverride
-     * @param string|null $headerOverride
-     * @param string|null $bodyOverride
-     * @param array $rewrites
      */
-    function __construct(string $url, bool $echo = false, string $cookie = '', string $methodOverride = null, string $headerOverride = null, string $bodyOverride = null, array $rewrites = []) {
+    function __construct() {
         // Setup curl
         $this->ch = curl_init();
 
-        // Set the rewrites
-        $this->rewrites = $rewrites;
+        //headers for echo
+        //
 
-        // Set url assuming return transfer
-        $this->setUrl($url);
+    }
 
-        // Set method (either use the request method or override)
-        $this->method = $methodOverride ? strtolower($methodOverride) : strtolower($_SERVER['REQUEST_METHOD']);
+    /**
+     * Static helper function: for proxying a get request
+     * @param string $target
+     * @param string|null $body
+     * @return Proxy
+     */
+    public static function get(string $target, string $body = null): Proxy {
 
-        // Set body (override body or get from input buffer)
-        $this->body = $bodyOverride ?? file_get_contents('php://input') ?? '';
+        $proxy = new Proxy();
 
-        // Setup cookie pot
-        $this->cookie = $cookie;
+        $proxy->route("*", $target, "GET", $body);
 
-        // Run the request
-        $this->run();
+        $proxy->run();
 
-        // Allow simple echo of response
-        if ($echo) {
-            // Set response headers (match to return)
-            header('Content-Type: ' . $this->responseHeaders['content-type']);
+        return $proxy;
+    }
 
-            echo $this->response;
-        }
+    /**
+     * Static helper function: for proxying a post request
+     * Todo: headers so we can specify type, e.g. JSON
+     * @param string $target
+     * @param string|null $body
+     * @return Proxy
+     */
+    public static function post(string $target, string $body = null): Proxy {
+
+        $proxy = new Proxy();
+
+        $proxy->route("*", $target, "POST", $body);
+
+        $proxy->run();
+
+        return $proxy;
+    }
+
+    /**
+     * Static helper function: for proxying a url forward
+     * @param string $target
+     * @return Proxy
+     */
+    public static function forward(string $target): Proxy {
+
+        $proxy = new Proxy();
+
+        $proxy->route("/$", $target);
+
+        $proxy->run($_SERVER['REQUEST_URI']);
+
+        return $proxy;
+    }
+
+    /**
+     * Static helper function: for using the proxy as a router
+     * @return Proxy
+     */
+    public static function router(): Proxy {
+        return new Proxy();
+    }
+
+    /**
+     * Function: Adds a route to the proxy. It assumes forward (body/method) if not specified otherwise
+     * Todo: add query string option to route
+     * @param $rule
+     * @param $target
+     * @param null $method
+     * @param null $body
+     */
+    public function route($rule, $target, $method = null, $body = null) {
+        // Check if rule exists and don't add if it does.
+
+        $this->routes[$rule] = [
+            "target" => $target,
+            "method" => $method ?? $_SERVER['REQUEST_METHOD'],
+            "body" => $body ?? file_get_contents('php://input') ?? ""
+        ];
     }
 
     /**
@@ -91,17 +139,42 @@ class Proxy {
      * @return string
      */
     public function getResponse(): string {
+        if (!$this->call) return 'No response, the call was unsuccessful or not made';
+
         return $this->response;
     }
 
     public function getCode(): string {
+        if (!$this->call) return 'No code, the call was unsuccessful or not made';
+
         return $this->code;
+    }
+
+    public function checkCall(): bool {
+        return $this->call;
+    }
+
+    /**
+     * Function: print the response if a call has been made
+     * @return bool
+     */
+    public function echoResponse(): bool {
+        if (!$this->call) return false;
+
+        //    header('Content-Type: ' . $this->responseHeaders['content-type']);
+
+        echo $this->getResponse();
+
+        return true;
     }
 
     /**
      * Function: Setup and run curl
      */
-    public function run() {
+    public function run($url = "") {
+        // Bail out if can't set a url / there are no router matches
+        if (!$this->setUrl($url)) return;
+
         // Process method
         $this->processMethod();
 
@@ -137,6 +210,8 @@ class Proxy {
         // Save request and response headers
         $info = curl_getinfo($this->ch);
 
+        $this->call = true;
+
         // Check we have info before setting response headers
         // Todo: clean this up a bit
         if (!empty($info) && $info["http_code"] !== 0) {
@@ -152,56 +227,67 @@ class Proxy {
 
     /**
      * Function: Set request url with/without headers
-     * @param string $url
+     * @param string $current
      * @param bool $transfer
+     * @return bool
      */
-    private function setUrl(string $url, bool $transfer = true) {
+    private function setUrl(string $current, bool $transfer = true): bool {
 
         // Set the url
-        $this->url = $this->routing($url);
+        $url = $this->routing($current);
 
-        curl_setopt($this->ch, CURLOPT_URL, $this->url);
+        if ($url == '') return false;
+
+        curl_setopt($this->ch, CURLOPT_URL, $url);
 
         if ($transfer) {
             curl_setopt($this->ch, CURLOPT_RETURNTRANSFER, true);
         }
+
+        return true;
     }
 
     /**
      * Function: Basic router function for rewrites in * and $ - prefer htaccess for this, but in a pinch
-     * @param $url
+     * Todo: rewrite in regex / cleanup duplicated (works for now)
+     * @param string $current
      * @return string
      */
-    private function routing($url): string {
+    private function routing(string $current): string {
 
-        // Check the url against rewrites
-        foreach($this->rewrites as $key => $value) {
+        $url = '';
+
+        // Loop through urls and check for match. Set url if match.
+        foreach ($this->routes as $key => $value) {
 
             // Check direct match
-            if ($key == $url) {
-                $url = $value;
+            if ($key == $current) {
+                // Todo: replace with a set
+                $url = $value["target"];
+                $this->method = $value["method"];
+                $this->body = $value["body"];
 
                 // Break loop on first match
                 break;
             }
 
-            $allCheck = explode('/', $key);
-            $count = count($allCheck);
-
             // Check for all match
             // Todo: maybe expand for regex/preg_replace instead
             // Todo: replace with str_starts for PHP 8 at some stage
+            $allCheck = explode('/', $key);
+            $count = count($allCheck);
+
             if ($count > 0) {
 
                 if ($allCheck[$count - 1] == '*') {
 
-                    // Todo: Maybe catch query strings to pass
-
                     // Remove *
-                    $replace = str_replace('/*', '', $key);
+                    $replace = str_replace('*', '', $key);
 
-                    if (substr($url, 0, strlen($replace)) === $replace) {
-                        $url = $value;
+                    if (substr($current, 0, strlen($replace)) === $replace) {
+                        $url = $value["target"];
+                        $this->method = $value["method"];
+                        $this->body = $value["body"];
 
                         // Break loop on first match
                         break;
@@ -212,9 +298,19 @@ class Proxy {
                     // Remove $
                     $replace = str_replace('/$', '', $key);
 
-                    if (substr($url, 0, strlen($replace)) === $replace) {
+                    if ($replace == '') {
+                        $url = $value["target"] . $current;
+                        $this->method = $value["method"];
+                        $this->body = $value["body"];
+
+                        break;
+                    }
+
+                    if (substr($current, 0, strlen($replace)) === $replace) {
                         // Replace the start of the url
-                        $url = str_replace($replace, $value, $url);
+                        $url = str_replace($replace, $value["target"], $current);
+                        $this->method = $value["method"];
+                        $this->body = $value["body"];
 
                         // Break loop on first match
                         break;
@@ -251,9 +347,6 @@ class Proxy {
      * Function: Build post options / get current post data from input buffer
      */
     private function buildPost() {
-        // Get post data from input buffer
-        // $postData = file_get_contents('php://input');
-
         $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? "application/octet-stream";
 
         // Set request content type for post (taken from incoming request / override in headerOverride if necessary)
@@ -277,13 +370,6 @@ class Proxy {
     }
 
     /**
-     * Function: Override current request headers (passed on construction)
-     */
-    private function headerOverride() {
-        // todo: header overrides
-    }
-
-    /**
      * Function: Setup cookie jar etc if cookies are enabled
      */
     private function setCookies() {
@@ -298,7 +384,7 @@ class Proxy {
      * Function: Save sessions
      * @return false|string
      */
-    private function handleSession(): {
+    private function handleSession(): bool|string {
         // Set session save path
         session_save_path($this->cookie);
 
